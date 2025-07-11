@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Absensi Siswa</title>
+    
+    <!-- Link ke Manifest Aplikasi -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#22c55e">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .modal-overlay {
+            transition: opacity 0.3s ease;
+        }
+        .weekend {
+            background-color: #f3f4f6 !important; /* Use important for print */
+        }
+        .dark .weekend {
+             background-color: #374151 !important;
+        }
+        .status-cell {
+            min-width: 40px;
+        }
+
+        @media print {
+            body {
+                background-color: white !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .printable-area {
+                display: block !important;
+                visibility: visible !important;
+                position: absolute;
+                left: 20px;
+                top: 20px;
+                width: calc(100% - 40px);
+            }
+             body > .container > div > *:not(.printable-area-wrapper) {
+                display: none;
+            }
+            .printable-area table, .printable-area th, .printable-area td {
+                 border: 1px solid #ccc !important;
+                 color: black !important;
+                 background-color: white !important;
+            }
+             .printable-area .sticky {
+                position: static !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8">
+        <div class="bg-white dark:bg-gray-800 shadow-2xl rounded-2xl p-6 md:p-8 max-w-7xl mx-auto printable-content">
+            
+            <div class="no-print">
+                <!-- Header -->
+                <div class="text-center mb-8">
+                    <h1 class="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400">Aplikasi Absen Siswa</h1>
+                    <p class="text-gray-600 dark:text-gray-400 mt-1">Info aplikasi : Wa 085275041923</p>
+                </div>
+
+                <!-- Auth Status -->
+                <div id="auth-status" class="text-center mb-4 text-xs text-gray-500">
+                    <p>Status: <span id="auth-state">Menghubungkan...</span></p>
+                    <p>User ID: <span id="user-id">...</span></p>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="flex justify-center border-b border-gray-200 dark:border-gray-700 mb-6 flex-wrap">
+                    <button id="tab-harian" class="tab-button flex-grow sm:flex-1 py-3 px-4 text-center font-semibold border-b-2 border-green-500 text-green-500">Absensi Harian</button>
+                    <button id="tab-bulanan" class="tab-button flex-grow sm:flex-1 py-3 px-4 text-center font-semibold border-b-2 border-transparent text-gray-500 hover:text-green-500">Bulan Absen</button>
+                    <button id="tab-rekap" class="tab-button flex-grow sm:flex-1 py-3 px-4 text-center font-semibold border-b-2 border-transparent text-gray-500 hover:text-green-500">Rekap Bulanan</button>
+                    <button id="tab-kelola" class="tab-button flex-grow sm:flex-1 py-3 px-4 text-center font-semibold border-b-2 border-transparent text-gray-500 hover:text-green-500">Kelola Siswa</button>
+                </div>
+
+                <!-- Message Box -->
+                <div id="message-box" class="hidden p-4 mb-4 text-sm rounded-lg" role="alert"></div>
+
+                <!-- Loading Indicator -->
+                <div id="loading-indicator" class="flex justify-center items-center my-8">
+                    <div class="loader"></div>
+                    <p class="ml-4 text-lg">Memuat data awal...</p>
+                </div>
+            </div>
+
+            <!-- Views Container -->
+            <div id="views-container" class="printable-area-wrapper">
+                <!-- Absensi Harian View -->
+                <div id="view-harian" class="hidden">
+                    <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4 no-print">
+                        <div><label for="attendance-date" class="font-semibold">Tanggal Absensi:</label><input type="date" id="attendance-date" class="ml-2 p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"></div>
+                        <button id="save-attendance" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg shadow-md">Simpan Absensi</button>
+                    </div>
+                    <div class="overflow-x-auto"><table class="min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="py-3 px-4 text-left">No</th><th class="py-3 px-4 text-left">Nama Siswa</th><th class="py-3 px-4 text-center">Keterangan</th></tr></thead><tbody id="student-list-body" class="divide-y divide-gray-200 dark:divide-gray-600"></tbody></table></div>
+                </div>
+
+                <!-- Bulan Absen View -->
+                <div id="view-bulanan" class="hidden">
+                    <div class="flex flex-col sm:flex-row justify-center items-center mb-6 gap-4 flex-wrap no-print">
+                        <div><label for="monthly-view-month" class="font-semibold">Bulan:</label><select id="monthly-view-month" class="ml-2 p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600"></select></div>
+                        <div><label for="monthly-view-year" class="font-semibold">Tahun:</label><select id="monthly-view-year" class="ml-2 p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600"></select></div>
+                        <button id="show-monthly-view" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md">Tampilkan Absensi</button>
+                        <button id="print-monthly-view" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hidden">Cetak</button>
+                    </div>
+                    <div class="printable-area">
+                        <div id="monthly-print-header" class="hidden print:block text-center mb-4">
+                            <h2 class="text-xl font-bold">Laporan Absensi Bulanan</h2>
+                            <h3 id="monthly-print-subtitle" class="text-lg"></h3>
+                        </div>
+                        <div class="flex justify-center flex-wrap gap-x-4 gap-y-2 mb-4 text-xs no-print">
+                            <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-green-200 dark:bg-green-900 mr-1.5 border border-green-400"></div>Hadir</span>
+                            <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-blue-200 dark:bg-blue-900 mr-1.5 border border-blue-400"></div>Izin</span>
+                            <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-yellow-200 dark:bg-yellow-900 mr-1.5 border border-yellow-400"></div>Sakit</span>
+                            <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-red-200 dark:bg-red-900 mr-1.5 border border-red-400"></div>Alfa</span>
+                            <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-gray-200 dark:bg-gray-600 mr-1.5 border border-gray-400"></div>Libur</span>
+                        </div>
+                        <div id="monthly-view-container" class="overflow-x-auto"></div>
+                    </div>
+                </div>
+
+                <!-- Rekap Bulanan View -->
+                <div id="view-rekap" class="hidden">
+                     <div class="flex flex-col sm:flex-row justify-center items-center mb-6 gap-4 flex-wrap no-print">
+                        <div><label for="recap-month" class="font-semibold">Bulan:</label><select id="recap-month" class="ml-2 p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600"></select></div>
+                        <div><label for="recap-year" class="font-semibold">Tahun:</label><select id="recap-year" class="ml-2 p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600"></select></div>
+                        <button id="show-recap" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg shadow-md">Tampilkan Rekap</button>
+                        <button id="export-csv-button" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hidden">Download (CSV)</button>
+                        <button id="print-recap-view" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hidden">Cetak</button>
+                    </div>
+                    <div class="printable-area">
+                         <div id="recap-print-header" class="hidden print:block text-center mb-4">
+                            <h2 class="text-xl font-bold">Rekapitulasi Bulanan Absensi</h2>
+                            <h3 id="recap-print-subtitle" class="text-lg"></h3>
+                        </div>
+                        <div id="recap-table-container" class="overflow-x-auto"><table class="min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="py-3 px-4 text-left">Nama Siswa</th><th class="py-3 px-4 text-center text-green-500">Hadir</th><th class="py-3 px-4 text-center text-blue-500">Izin</th><th class="py-3 px-4 text-center text-yellow-500">Sakit</th><th class="py-3 px-4 text-center text-red-500">Alfa</th></tr></thead><tbody id="recap-list-body" class="divide-y divide-gray-200 dark:divide-gray-600"></tbody></table></div>
+                    </div>
+                </div>
+
+                <!-- Kelola Siswa View -->
+                <div id="view-kelola" class="hidden">
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-6 border border-gray-200 dark:border-gray-600">
+                        <h3 class="text-lg font-semibold mb-3">Tambah Siswa Baru</h3>
+                        <form id="add-student-form" class="grid sm:grid-cols-3 gap-4 items-end">
+                            <div><label for="new-student-name" class="block text-sm font-medium">Nama Lengkap</label><input type="text" id="new-student-name" required class="mt-1 block w-full p-2 border rounded-md shadow-sm"></div>
+                            <div><label for="new-student-gender" class="block text-sm font-medium">Jenis Kelamin</label><select id="new-student-gender" required class="mt-1 block w-full p-2 border rounded-md shadow-sm"><option>Laki-laki</option><option>Perempuan</option></select></div>
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md">Tambah Siswa</button>
+                        </form>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">Daftar Siswa Saat Ini</h3>
+                    <div class="overflow-x-auto"><table class="min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="py-3 px-4 text-left">No</th><th class="py-3 px-4 text-left">Nama</th><th class="py-3 px-4 text-left">Jenis Kelamin</th><th class="py-3 px-4 text-center">Aksi</th></tr></thead><tbody id="manage-student-list-body" class="divide-y divide-gray-200 dark:divide-gray-600"></tbody></table></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="delete-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+            <h3 class="text-lg font-bold mb-4">Konfirmasi Penghapusan</h3><p id="delete-modal-text" class="mb-6"></p>
+            <div class="flex justify-end gap-4"><button id="cancel-delete-btn" class="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded-lg">Batal</button><button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg">Ya, Hapus</button></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-analytics.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, writeBatch, addDoc, deleteDoc, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+        // Konfigurasi Firebase Anda
+        const firebaseConfig = {
+            apiKey: "AIzaSyD45s2mVU7u5Ey97d6C3Rvm1xjlfcf8tZU",
+            authDomain: "onnops-andro-1.firebaseapp.com",
+            projectId: "onnops-andro-1",
+            storageBucket: "onnops-andro-1.appspot.com",
+            messagingSenderId: "126540426999",
+            appId: "1:126540426999:web:6b9a74da323ac94243edf2",
+            measurementId: "G-FSW11V8JKW"
+        };
+        
+        const STATUS_OPTIONS = ["Hadir", "Izin", "Sakit", "Alfa"];
+        const MONTH_NAMES = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+        let app, db, auth, userId, isAuthReady = false, dynamicStudentList = [], currentRecapData = null, studentListener = null;
+        let audioStarted = false;
+
+        try { 
+            app = initializeApp(firebaseConfig); 
+            db = getFirestore(app); 
+            auth = getAuth(app); 
+            const analytics = getAnalytics(app);
+        } catch (e) { console.error("Firebase initialization failed:", e); }
+
+        const DOM = {
+            tabs: { harian: document.getElementById('tab-harian'), bulanan: document.getElementById('tab-bulanan'), rekap: document.getElementById('tab-rekap'), kelola: document.getElementById('tab-kelola') },
+            views: { harian: document.getElementById('view-harian'), bulanan: document.getElementById('view-bulanan'), rekap: document.getElementById('view-rekap'), kelola: document.getElementById('view-kelola') },
+            auth: { state: document.getElementById('auth-state'), id: document.getElementById('user-id') },
+            messageBox: document.getElementById('message-box'), loadingIndicator: document.getElementById('loading-indicator'),
+            harian: { listBody: document.getElementById('student-list-body'), dateInput: document.getElementById('attendance-date'), saveButton: document.getElementById('save-attendance') },
+            bulanan: { monthSelect: document.getElementById('monthly-view-month'), yearSelect: document.getElementById('monthly-view-year'), showButton: document.getElementById('show-monthly-view'), printButton: document.getElementById('print-monthly-view'), container: document.getElementById('monthly-view-container'), printSubtitle: document.getElementById('monthly-print-subtitle')},
+            rekap: { monthSelect: document.getElementById('recap-month'), yearSelect: document.getElementById('recap-year'), showButton: document.getElementById('show-recap'), exportButton: document.getElementById('export-csv-button'), printButton: document.getElementById('print-recap-view'), listBody: document.getElementById('recap-list-body'), printSubtitle: document.getElementById('recap-print-subtitle') },
+            kelola: { form: document.getElementById('add-student-form'), nameInput: document.getElementById('new-student-name'), genderInput: document.getElementById('new-student-gender'), listBody: document.getElementById('manage-student-list-body') },
+            deleteModal: { element: document.getElementById('delete-modal'), text: document.getElementById('delete-modal-text'), confirmBtn: document.getElementById('confirm-delete-btn'), cancelBtn: document.getElementById('cancel-delete-btn') },
+        };
+        
+        onAuthStateChanged(auth, async user => {
+            if (user) {
+                userId = user.uid;
+                isAuthReady = true;
+                DOM.auth.state.textContent = 'Terhubung';
+                DOM.auth.id.textContent = userId;
+                await initializeAppUI();
+            } else {
+                isAuthReady = false;
+                DOM.auth.state.textContent = 'Tidak Terhubung';
+                DOM.auth.id.textContent = 'Tidak ada';
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Anonymous sign-in failed:", error);
+                    if (error.code === 'auth/operation-not-allowed') {
+                        showMessage("Gagal masuk: Autentikasi Anonim belum diaktifkan di Firebase Console Anda. Buka Proyek Firebase > Authentication > Sign-in method, dan aktifkan 'Anonymous'.", true);
+                    } else {
+                         showMessage(`Gagal masuk: ${error.message}`, true);
+                    }
+                }
+            }
+        });
+        
+        function showLoading(show, message = "Memuat data...") {
+            DOM.loadingIndicator.style.display = show ? 'flex' : 'none'; DOM.loadingIndicator.querySelector('p').textContent = message;
+        }
+
+        function playSound() {
+            if (!audioStarted) {
+                Tone.start();
+                audioStarted = true;
+            }
+            const synth = new Tone.Synth().toDestination();
+            synth.triggerAttackRelease("C5", "8n");
+        }
+
+        function showMessage(message, isError = false) {
+            DOM.messageBox.textContent = message; DOM.messageBox.className = `p-4 mb-4 text-sm rounded-lg ${isError ? 'text-red-700 bg-red-100 dark:bg-red-200 dark:text-red-800' : 'text-green-700 bg-green-100 dark:bg-green-200 dark:text-green-800'}`;
+            DOM.messageBox.style.display = 'block'; 
+            playSound();
+            setTimeout(() => { DOM.messageBox.style.display = 'none'; }, 4000);
+        }
+
+        function switchView(viewName) {
+            Object.values(DOM.views).forEach(v => v.classList.add('hidden'));
+            Object.values(DOM.tabs).forEach(t => { t.classList.remove('border-green-500', 'text-green-500'); t.classList.add('border-transparent', 'text-gray-500'); });
+            
+            DOM.views[viewName].classList.remove('hidden');
+            DOM.tabs[viewName].classList.add('border-green-500', 'text-green-500');
+            DOM.tabs[viewName].classList.remove('border-transparent', 'text-gray-500');
+        }
+
+        async function seedInitialStudents() {
+            if (!isAuthReady) return;
+            
+            const initialStudents = [
+                { name: "Aditiya", gender: "Laki-laki" },
+                { name: "Alvino", gender: "Laki-laki" },
+                { name: "Anggun", gender: "Perempuan" },
+                { name: "Balqis Khumairoh", gender: "Perempuan" },
+                { name: "Khairani Syavira", gender: "Perempuan" },
+                { name: "Mhd. Nazril", gender: "Laki-laki" },
+                { name: "Nurul Cikyta", gender: "Perempuan" },
+                { name: "Sabrina", gender: "Perempuan" },
+                { name: "Zurni Sofina", gender: "Perempuan" }
+            ];
+
+            showLoading(true, "Menambahkan data siswa awal...");
+            const studentsCol = collection(db, "users", userId, "students");
+            const batch = writeBatch(db);
+
+            for (const student of initialStudents) {
+                const newStudentRef = doc(studentsCol);
+                batch.set(newStudentRef, {
+                    name: student.name,
+                    gender: student.gender,
+                    createdAt: new Date()
+                });
+            }
+            
+            const metadataRef = doc(db, "users", userId, "metadata", "appState");
+            batch.set(metadataRef, { seeded: true });
+
+            try {
+                await batch.commit();
+                showMessage("Daftar siswa awal berhasil ditambahkan.");
+            } catch (error) {
+                console.error("Error seeding initial students:", error);
+                showMessage("Gagal menambahkan data siswa awal.", true);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function listenToStudents() {
+            if (studentListener) studentListener();
+            if (!isAuthReady) return;
+
+            const studentsCol = collection(db, "users", userId, "students");
+            const q = query(studentsCol, orderBy("name", "asc"));
+
+            studentListener = onSnapshot(q, async (snapshot) => {
+                const metadataRef = doc(db, "users", userId, "metadata", "appState");
+                const metadataSnap = await getDoc(metadataRef);
+
+                if (snapshot.empty && !metadataSnap.exists()) {
+                    await seedInitialStudents();
+                    return; 
+                }
+
+                dynamicStudentList = snapshot.docs.map((doc, index) => ({ docId: doc.id, id: index + 1, ...doc.data() }));
+                renderAllTables();
+                if (DOM.loadingIndicator.style.display !== 'none') {
+                    showLoading(false);
+                    switchView('harian');
+                }
+            }, error => {
+                console.error(error);
+                showMessage("Gagal memuat daftar siswa.", true);
+                showLoading(false);
+            });
+        }
+        
+        function renderAllTables() { renderDailyTable(); renderStudentManagementTable(); }
+        
+        function renderDailyTable() {
+            DOM.harian.listBody.innerHTML = '';
+            if (dynamicStudentList.length === 0) { DOM.harian.listBody.innerHTML = '<tr><td colspan="3" class="text-center p-8">Belum ada siswa.</td></tr>'; return; }
+            dynamicStudentList.forEach(student => {
+                const row = document.createElement('tr'); row.className = 'hover:bg-gray-50';
+                const statusRadios = STATUS_OPTIONS.map(s => `<label class="inline-flex items-center mx-2"><input type="radio" class="form-radio h-4 w-4 text-green-600" name="status-${student.docId}" value="${s}"><span class="ml-1 text-xs">${s}</span></label>`).join('');
+                row.innerHTML = `<td class="py-3 px-4">${student.id}</td><td class="py-3 px-4">${student.name}</td><td class="py-3 px-4 text-center"><div class="flex justify-center">${statusRadios}</div></td>`;
+                DOM.harian.listBody.appendChild(row);
+            });
+            loadAttendanceForDate(DOM.harian.dateInput.value);
+        }
+
+        function renderStudentManagementTable() {
+            DOM.kelola.listBody.innerHTML = '';
+            if (dynamicStudentList.length === 0) { DOM.kelola.listBody.innerHTML = '<tr><td colspan="4" class="text-center p-8">Belum ada siswa.</td></tr>'; return; }
+            dynamicStudentList.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td class="py-3 px-4">${student.id}</td><td class="py-3 px-4">${student.name}</td><td>${student.gender}</td><td class="text-center"><button class="delete-student-btn text-red-500" data-id="${student.docId}" data-name="${student.name}">Hapus</button></td>`;
+                DOM.kelola.listBody.appendChild(row);
+            });
+            document.querySelectorAll('.delete-student-btn').forEach(btn => btn.addEventListener('click', e => openDeleteModal(e.target.dataset.id, e.target.dataset.name)));
+        }
+        
+        async function handleAddStudent(e) {
+            e.preventDefault();
+            if (!isAuthReady) { showMessage("Autentikasi belum siap.", true); return; }
+            const name = DOM.kelola.nameInput.value.trim();
+            const gender = DOM.kelola.genderInput.value;
+
+            if (!name) { showMessage("Nama siswa tidak boleh kosong.", true); return; }
+            
+            const isDuplicate = dynamicStudentList.some(student => student.name.trim().toLowerCase() === name.toLowerCase());
+            if (isDuplicate) { showMessage("Nama siswa sudah ada.", true); return; }
+
+            const btn = e.target.querySelector('button'); btn.disabled = true;
+            try {
+                await addDoc(collection(db, "users", userId, "students"), { name, gender, createdAt: new Date() });
+                showMessage("Siswa berhasil ditambahkan."); DOM.kelola.form.reset();
+            } catch (error) { console.error("Error adding student:", error); showMessage("Gagal menambahkan siswa.", true);
+            } finally { btn.disabled = false; }
+        }
+        
+        function openDeleteModal(id, name) { DOM.deleteModal.text.textContent = `Yakin hapus "${name}"?`; DOM.deleteModal.confirmBtn.dataset.id = id; DOM.deleteModal.element.classList.remove('hidden'); }
+        function closeDeleteModal() { DOM.deleteModal.element.classList.add('hidden'); }
+        async function handleDeleteStudent() { const id = DOM.deleteModal.confirmBtn.dataset.id; if (!isAuthReady || !id) return; closeDeleteModal(); showLoading(true, "Menghapus...");
+            try { await deleteDoc(doc(db, "users", userId, "students", id)); showMessage("Siswa dihapus."); } catch (error) { console.error(error); showMessage("Gagal hapus.", true); } finally { showLoading(false); }
+        }
+        
+        async function loadAttendanceForDate(dateString) {
+             if (!isAuthReady) return; showLoading(true, "Memuat absensi...");
+            dynamicStudentList.forEach(s => { const r = document.querySelector(`input[name="status-${s.docId}"][value="Alfa"]`); if (r) r.checked = true; });
+            try { const q = query(collection(db, "users", userId, "attendance"), where("date", "==", dateString));
+                const snap = await getDocs(q); snap.forEach(d => { const r = document.querySelector(`input[name="status-${d.data().studentDocId}"][value="${d.data().status}"]`); if (r) r.checked = true; });
+            } catch (error) { console.error(error); } finally { showLoading(false); }
+        }
+
+        async function saveAttendance() {
+            if (!isAuthReady || dynamicStudentList.length === 0) return; const date = DOM.harian.dateInput.value; if (!date) { showMessage("Pilih tanggal.", true); return; }
+            showLoading(true, "Menyimpan..."); DOM.harian.saveButton.disabled = true;
+            try { const batch = writeBatch(db); const col = collection(db, "users", userId, "attendance");
+                for (const s of dynamicStudentList) { const radio = document.querySelector(`input[name="status-${s.docId}"]:checked`);
+                    batch.set(doc(col, `${date}_${s.docId}`), { studentDocId: s.docId, studentName: s.name, date, status: radio ? radio.value : "Alfa" }); }
+                await batch.commit(); showMessage("Absensi disimpan!");
+            } catch (error) { console.error(error); showMessage("Gagal simpan.", true); } finally { showLoading(false); DOM.harian.saveButton.disabled = false; }
+        }
+
+        async function generateMonthlyView() {
+            if (!isAuthReady) return; showLoading(true, "Membuat tampilan bulanan...");
+            const year = parseInt(DOM.bulanan.yearSelect.value); const month = parseInt(DOM.bulanan.monthSelect.value);
+            DOM.bulanan.printSubtitle.textContent = `Bulan: ${MONTH_NAMES[month]} ${year}`;
+            const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+            const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+            
+            try { const q = query(collection(db, "users", userId, "attendance"), where("date", ">=", startDate), where("date", "<=", endDate));
+                const snap = await getDocs(q); const attendanceData = {};
+                snap.forEach(d => { const data = d.data(); if (!attendanceData[data.studentDocId]) attendanceData[data.studentDocId] = {}; attendanceData[data.studentDocId][data.date] = data.status; });
+                renderMonthlyTable(attendanceData, year, month);
+                DOM.bulanan.printButton.classList.remove('hidden');
+            } catch (e) { console.error(e); showMessage("Gagal mengambil data bulanan.", true); } finally { showLoading(false); }
+        }
+
+        function renderMonthlyTable(data, year, month) {
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            let table = `<table class="min-w-full text-xs text-center border-collapse border border-gray-300">`;
+            let header = `<thead><tr class="bg-gray-100 dark:bg-gray-700"><th class="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 p-2 border border-gray-300">Nama Siswa</th>`;
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day); const dayOfWeek = date.getDay();
+                const isWeekend = dayOfWeek === 0;
+                header += `<th class="p-2 border border-gray-300 ${isWeekend ? 'weekend' : ''}">${day}</th>`;
+            }
+            header += `</tr></thead>`; table += header;
+            
+            let body = `<tbody>`;
+            dynamicStudentList.forEach(student => {
+                body += `<tr><td class="sticky left-0 z-10 bg-white dark:bg-gray-800 p-2 border border-gray-300 text-left font-medium whitespace-nowrap">${student.name}</td>`;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const status = data[student.docId] ? data[student.docId][dateStr] : undefined;
+                    const dayOfWeek = new Date(year, month, day).getDay(); 
+                    const isWeekend = dayOfWeek === 0;
+                    let cellContent = '&nbsp;'; let bgColor = '';
+                    if (isWeekend) { bgColor = 'weekend'; }
+                    if (status) {
+                        cellContent = status.charAt(0);
+                        if(status === 'Hadir') bgColor = 'bg-green-200 dark:bg-green-900';
+                        else if (status === 'Izin') bgColor = 'bg-blue-200 dark:bg-blue-900';
+                        else if (status === 'Sakit') bgColor = 'bg-yellow-200 dark:bg-yellow-900';
+                        else if (status === 'Alfa') bgColor = 'bg-red-200 dark:bg-red-900';
+                    }
+                    body += `<td class="p-2 border border-gray-300 status-cell ${bgColor}">${cellContent}</td>`;
+                }
+                body += `</tr>`;
+            });
+            body += `</tbody>`; table += body; table += `</table>`;
+            DOM.bulanan.container.innerHTML = table;
+        }
+
+        function populateDateSelectors() {
+            [DOM.rekap.monthSelect, DOM.bulanan.monthSelect].forEach(sel => sel.innerHTML = MONTH_NAMES.map((m, i) => `<option value="${i}">${m}</option>`).join(''));
+            const year = new Date().getFullYear();
+            [DOM.rekap.yearSelect, DOM.bulanan.yearSelect].forEach(sel => { let opts = ''; for (let i = year; i >= year - 5; i--) opts += `<option value="${i}">${i}</option>`; sel.innerHTML = opts; });
+            const today = new Date();
+            [DOM.rekap.monthSelect, DOM.bulanan.monthSelect].forEach(sel => sel.value = today.getMonth());
+            [DOM.rekap.yearSelect, DOM.bulanan.yearSelect].forEach(sel => sel.value = today.getFullYear());
+        }
+        
+        async function initializeAppUI() {
+            if (!isAuthReady) return; showLoading(true); listenToStudents();
+            let today = new Date(); if (today.getDay() === 0) today.setDate(today.getDate() + 1);
+            DOM.harian.dateInput.value = today.toISOString().split('T')[0];
+            populateDateSelectors(); setupEventListeners();
+            
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('/sw.js').then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    }, err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+                });
+            }
+        }
+        
+        function setupEventListeners() {
+            Object.keys(DOM.tabs).forEach(key => DOM.tabs[key].addEventListener('click', () => switchView(key)));
+            DOM.harian.saveButton.addEventListener('click', saveAttendance);
+            DOM.harian.dateInput.addEventListener('change', () => loadAttendanceForDate(DOM.harian.dateInput.value));
+            DOM.bulanan.showButton.addEventListener('click', generateMonthlyView);
+            DOM.rekap.showButton.addEventListener('click', generateRecap);
+            DOM.rekap.exportButton.addEventListener('click', exportRecapToCSV); 
+            DOM.kelola.form.addEventListener('submit', handleAddStudent);
+            DOM.deleteModal.cancelBtn.addEventListener('click', closeDeleteModal);
+            DOM.deleteModal.confirmBtn.addEventListener('click', handleDeleteStudent);
+            DOM.bulanan.printButton.addEventListener('click', () => { window.print(); });
+            DOM.rekap.printButton.addEventListener('click', () => { window.print(); });
+        }
+
+        async function generateRecap() {
+            if (!isAuthReady) { showMessage("Autentikasi belum siap.", true); return; }
+            showLoading(true, "Membuat rekap...");
+            DOM.rekap.listBody.innerHTML = '<tr><td colspan="5" class="text-center p-8">Memproses...</td></tr>';
+            DOM.rekap.exportButton.classList.add('hidden');
+            DOM.rekap.printButton.classList.add('hidden');
+            currentRecapData = null;
+            try {
+                const year = DOM.rekap.yearSelect.value; const month = parseInt(DOM.rekap.monthSelect.value);
+                DOM.rekap.printSubtitle.textContent = `Bulan: ${MONTH_NAMES[month]} ${year}`;
+                const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+                const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+                const q = query(collection(db, "users", userId, "attendance"), where("date", ">=", startDate), where("date", "<=", endDate));
+                const snap = await getDocs(q);
+                const recapData = {};
+                dynamicStudentList.forEach(s => { recapData[s.name] = { Hadir: 0, Izin: 0, Sakit: 0, Alfa: 0 }; });
+                let hasData = false;
+                snap.forEach(d => {
+                    const data = d.data();
+                    if (recapData[data.studentName]) { recapData[data.studentName][data.status]++; hasData = true; }
+                });
+                renderRecapTable(recapData, hasData);
+                currentRecapData = recapData;
+                if (hasData) {
+                    DOM.rekap.exportButton.classList.remove('hidden');
+                    DOM.rekap.printButton.classList.remove('hidden');
+                }
+            } catch (e) { console.error("Error generating recap:", e); showMessage("Gagal membuat rekapitulasi.", true);
+            } finally { showLoading(false); }
+        }
+
+        function renderRecapTable(recapData, hasData) {
+            DOM.rekap.listBody.innerHTML = '';
+            if (!hasData) { DOM.rekap.listBody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-gray-500">Tidak ada data absensi.</td></tr>'; return; }
+            dynamicStudentList.forEach(s => {
+                const stats = recapData[s.name];
+                if (!stats) return; 
+                const row = document.createElement('tr'); row.className = 'hover:bg-gray-50 dark:hover:bg-gray-700';
+                row.innerHTML = `
+                    <td class="py-3 px-4 font-medium">${s.name}</td>
+                    <td class="py-3 px-4 text-center font-bold text-green-500">${stats.Hadir}</td>
+                    <td class="py-3 px-4 text-center font-bold text-blue-500">${stats.Izin}</td>
+                    <td class="py-3 px-4 text-center font-bold text-yellow-500">${stats.Sakit}</td>
+                    <td class="py-3 px-4 text-center font-bold text-red-500">${stats.Alfa}</td>`;
+                DOM.rekap.listBody.appendChild(row);
+            });
+        }
+
+        function exportRecapToCSV() {
+            if (!currentRecapData) { showMessage("Tidak ada data untuk diekspor.", true); return; }
+            let csvContent = "data:text/csv;charset=utf-8,Nama Siswa,Hadir,Izin,Sakit,Alfa\r\n";
+            dynamicStudentList.forEach(s => {
+                const stats = currentRecapData[s.name];
+                if (stats) { csvContent += `"${s.name}",${stats.Hadir},${stats.Izin},${stats.Sakit},${stats.Alfa}\r\n`; }
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `rekap_absensi_${MONTH_NAMES[DOM.rekap.monthSelect.value]}_${DOM.rekap.yearSelect.value}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+    </script>
+</body>
+</html>
